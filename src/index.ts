@@ -8,7 +8,6 @@ import { watch } from "chokidar";
 import pLimit from "p-limit";
 import acorn, { parse, Node } from "acorn";
 import { generate } from "astring";
-
 type LooseNode = Node & {
   expression?: LooseNode;
   callee?: LooseNode;
@@ -31,10 +30,7 @@ const prepVercel = async () => {
   try {
     await stat(".vercel/project.json");
   } catch {
-    await mkdir(".vercel", { recursive: true });
-    await writeFile(
-      ".vercel/project.json",
-      JSON.stringify({ projectId: "_", orgId: "_", settings: {} })
+	@@ -35,38 +38,8 @@ const prepVercel = async () => {
     );
   }
   console.log("⚡️");
@@ -47,23 +43,19 @@ const buildVercel = async () => {
   console.log("⚡️");
   console.log("⚡️ Building project with 'npx vercel build'...");
   console.log("⚡️");
-
   const vercelBuild = spawn("npx", ["vercel", "build"]);
-
   vercelBuild.stdout.on("data", (data) => {
     const lines: string[] = data.toString().split("\n");
     lines.map((line) => {
       console.log(`▲ ${line}`);
     });
   });
-
   vercelBuild.stderr.on("data", (data) => {
     const lines: string[] = data.toString().split("\n");
     lines.map((line) => {
       console.log(`▲ ${line}`);
     });
   });
-
   await new Promise((resolve, reject) => {
     vercelBuild.on("close", (code) => {
       if (code === 0) {
@@ -73,13 +65,11 @@ const buildVercel = async () => {
       }
     });
   });
-
   console.log("⚡️");
   console.log("⚡️");
   console.log("⚡️ Completed 'npx vercel build'.");
   console.log("⚡️");
 };
-
 interface MiddlewareManifest {
   sortedMiddleware: string[];
   middleware: Record<
@@ -107,7 +97,6 @@ interface MiddlewareManifest {
   >;
   version: 2;
 }
-
 const transform = async ({
   experimentalMinify,
 }: {
@@ -122,7 +111,6 @@ const transform = async ({
     );
     exit(1);
   }
-
   if (config.version !== 3) {
     console.error(
       `⚡️ ERROR: Unknown '.vercel/output/config.json' version. Expected 3 but found ${config.version}.`
@@ -132,40 +120,30 @@ const transform = async ({
     );
     exit(1);
   }
-
   const functionsDir = resolve(".vercel/output/functions");
   let functionsExist = false;
   try {
     await stat(functionsDir);
     functionsExist = true;
   } catch {}
-
   if (!functionsExist) {
     console.log("⚡️ No functions detected.");
     return;
   }
-
   const functionsMap = new Map<string, string>();
-
   const tmpFunctionsDir = join(tmpdir(), Math.random().toString(36).slice(2));
   const tmpWebpackDir = join(tmpdir(), Math.random().toString(36).slice(2));
-
   const invalidFunctions: string[] = [];
-
   const webpackChunks = new Map<number, string>();
-
   const walk = async (dir: string) => {
     const files = await readdir(dir);
-
     await Promise.all(
       files.map(async (file) => {
         const filepath = join(dir, file);
         const isDirectory = (await stat(filepath)).isDirectory();
         const relativePath = relative(functionsDir, filepath);
-
         if (isDirectory && filepath.endsWith(".func")) {
           const name = relativePath.replace(/\.func$/, "");
-
           const functionConfigFile = join(filepath, ".vc-config.json");
           let functionConfig: { runtime: "edge"; entrypoint: string };
           try {
@@ -175,37 +153,31 @@ const transform = async ({
             invalidFunctions.push(file);
             return;
           }
-
           if (functionConfig.runtime !== "edge") {
             invalidFunctions.push(name);
             return;
           }
-
           const functionFile = join(filepath, functionConfig.entrypoint);
           let functionFileExists = false;
           try {
             await stat(functionFile);
             functionFileExists = true;
           } catch {}
-
           if (!functionFileExists) {
             invalidFunctions.push(name);
             return;
           }
-
           let contents = await readFile(functionFile, "utf8");
           contents = contents.replace(
             // TODO: This hack is not good. We should replace this with something less brittle ASAP
             /(Object.defineProperty\(globalThis,\s*"__import_unsupported",\s*{[\s\S]*?configurable:\s*)([^,}]*)(.*}\s*\))/gm,
             "$1true$3"
           );
-
           if (experimentalMinify) {
             const parsedContents = parse(contents, {
               ecmaVersion: "latest",
               sourceType: "module",
             }) as Node & { body: LooseNode[] };
-
             const expressions = parsedContents.body
               .filter(
                 ({ type, expression }) =>
@@ -223,7 +195,6 @@ const transform = async ({
                 (node) =>
                   node?.expression?.arguments?.[0]?.elements?.[1]?.properties
               ) as LooseNode[][];
-
             for (const objectOfChunks of expressions) {
               for (const chunkExpression of objectOfChunks) {
                 const key = chunkExpression?.key?.value;
@@ -243,11 +214,8 @@ const transform = async ({
                     exit(1);
                   }
                 }
-
                 webpackChunks.set(key, generate(chunkExpression.value));
-
                 const chunkFilePath = join(tmpWebpackDir, `${key}.js`);
-
                 const newValue = {
                   type: "MemberExpression",
                   object: {
@@ -266,18 +234,14 @@ const transform = async ({
                   },
                   property: { type: "Identifier", name: "default" },
                 };
-
                 chunkExpression.value = newValue;
               }
             }
-
             contents = generate(parsedContents);
           }
-
           const newFilePath = join(tmpFunctionsDir, `${relativePath}.js`);
           await mkdir(dirname(newFilePath), { recursive: true });
           await writeFile(newFilePath, contents);
-
           functionsMap.set(
             relative(functionsDir, filepath).slice(0, -".func".length),
             newFilePath
@@ -288,20 +252,16 @@ const transform = async ({
       })
     );
   };
-
   await walk(functionsDir);
-
   for (const [chunkIdentifier, code] of webpackChunks) {
     const chunkFilePath = join(tmpWebpackDir, `${chunkIdentifier}.js`);
     await mkdir(dirname(chunkFilePath), { recursive: true });
     await writeFile(chunkFilePath, `export default ${code}`);
   }
-
   if (functionsMap.size === 0) {
     console.log("⚡️ No functions detected.");
     return;
   }
-
   let middlewareManifest: MiddlewareManifest;
   try {
     // Annoying that we don't get this from the `.vercel` directory.
@@ -313,7 +273,6 @@ const transform = async ({
     console.error("⚡️ ERROR: Could not read the functions manifest.");
     exit(1);
   }
-
   if (middlewareManifest.version !== 2) {
     console.error(
       `⚡️ ERROR: Unknown functions manifest version. Expected 2 but found ${middlewareManifest.version}.`
@@ -323,7 +282,6 @@ const transform = async ({
     );
     exit(1);
   }
-
   const hydratedMiddleware = new Map<
     string,
     {
@@ -338,7 +296,6 @@ const transform = async ({
       filepath: string;
     }
   >();
-
   const middlewareEntries = Object.values(middlewareManifest.middleware);
   const functionsEntries = Object.values(middlewareManifest.functions);
   for (const [name, filepath] of functionsMap) {
@@ -349,7 +306,6 @@ const transform = async ({
         }
       }
     }
-
     for (const entry of functionsEntries) {
       if (
         `pages/${name}` === entry?.name ||
@@ -359,11 +315,9 @@ const transform = async ({
       }
     }
   }
-
   const rscFunctions = [...functionsMap.keys()].filter((name) =>
     name.endsWith(".rsc")
   );
-
   if (
     hydratedMiddleware.size + hydratedFunctions.size !==
     functionsMap.size - rscFunctions.length
@@ -376,7 +330,6 @@ const transform = async ({
     );
     exit(1);
   }
-
   if (invalidFunctions.length > 0) {
     console.error(
       "⚡️ ERROR: Failed to produce a Cloudflare Pages build from the project."
@@ -416,12 +369,10 @@ const transform = async ({
     );
     exit(1);
   }
-
   const functionsFile = join(
     tmpdir(),
     `functions-${Math.random().toString(36).slice(2)}.js`
   );
-
   await writeFile(
     functionsFile,
     `
@@ -443,7 +394,6 @@ const transform = async ({
         )
         .join(",")}};`
   );
-
   await build({
     entryPoints: [join(__dirname, "../templates/_worker.js")],
     bundle: true,
@@ -458,10 +408,8 @@ const transform = async ({
     },
     outfile: ".vercel/output/static/_worker.js",
   });
-
   console.log("⚡️ Generated '.vercel/output/static/_worker.js'.");
 };
-
 const help = () => {
   console.log("⚡️");
   console.log("⚡️ Usage: npx @cloudflare/next-on-pages [options]");
@@ -488,7 +436,6 @@ const help = () => {
     "⚡️ Docs: https://developers.cloudflare.com/pages/framework-guides/deploy-a-nextjs-site/"
   );
 };
-
 const main = async ({
   skipBuild,
   experimentalMinify,
@@ -500,22 +447,17 @@ const main = async ({
     await prepVercel();
     await buildVercel();
   }
-
   await transform({ experimentalMinify });
 };
-
 (async () => {
   console.log("⚡️ @cloudflare/next-on-pages CLI");
-
   if (process.argv.includes("--help")) {
     help();
     return;
   }
-
   const skipBuild = process.argv.includes("--skip-build");
   const experimentalMinify = process.argv.includes("--experimental-minify");
   const limit = pLimit(1);
-
   if (process.argv.includes("--watch")) {
     watch(".", {
       ignored: [
@@ -540,7 +482,6 @@ const main = async ({
       }
     });
   }
-
   limit(() =>
     main({ skipBuild, experimentalMinify }).then(() => {
       if (process.argv.includes("--watch")) {
