@@ -26,7 +26,7 @@ type LooseNode = Node & {
 
 const prepVercel = async () => {
   console.log("⚡️");
-  console.log("⚡️ Preparing project for 'npx vercel build'...");
+  console.log("⚡️[ChronSyn] Preparing project for 'npx vercel build'...");
   console.log("⚡️");
   try {
     await stat(".vercel/project.json");
